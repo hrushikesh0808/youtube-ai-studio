@@ -5,10 +5,13 @@ Main application entry point.
 """
 
 from core.config.settings import settings
+from core.logging.logger import logger
 
 
 def main():
     """Start the application."""
+    
+    logger.info("Application Started")
 
     print("=" * 60)
     print(f"🚀 Welcome to {settings.app_name}")
