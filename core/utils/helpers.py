@@ -43,3 +43,21 @@ def save_text_file(path: str, content: str) -> Path:
         file.write(content)
         
     return file_path
+
+def read_text_file(path: str) -> str:
+    """
+    Read text from a UTF-8 encoded file.
+
+    Args:
+        path: File path.
+
+    Returns:
+        File contents as a string.
+    """
+    
+    file_path = Path(path)
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        content = file.read()
+        
+    return content

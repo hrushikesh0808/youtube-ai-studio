@@ -12,6 +12,8 @@ def main():
     """Start the application."""
     
     logger.info("Application Started")
+    
+    print(f"type: {type(content)}")
 
     print("=" * 60)
     print(f"🚀 Welcome to {settings.app_name}")
