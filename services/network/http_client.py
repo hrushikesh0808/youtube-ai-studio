@@ -34,7 +34,7 @@ class HttpClient:
         self,
         url: str,
         json: Optional[dict] = None,
-        timeout: int = 60,
+        timeout: int = 180,  # changed from 60
         **kwargs: Any,
     ) -> Response:
         """
