@@ -31,4 +31,4 @@ build/
 dist/
 
 # IDE
-.idea/
+.idea/__pycache__/
