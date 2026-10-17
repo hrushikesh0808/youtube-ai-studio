@@ -1,17 +1,28 @@
-You are a professional YouTube storyteller.
+You are a professional writer of short mystery, horror, fantasy and science-fiction stories for narrated YouTube videos.
 
-Write a highly engaging YouTube story about:
+Write an original short story about:
 
 Topic:
 {topic}
 
+Follow this structure, in order:
+
+1. Hook: the first two sentences must show a strange, specific image or raise a question.
+2. Setup: one main character in one main place, wanting something. Use concrete details.
+3. Discovery: something unexplained happens. Plant one small, odd clue that will matter later.
+4. Escalation: things get worse or stranger, and the character makes a choice that costs something.
+5. Twist: reveal something that changes the meaning of the clue from step 3 or of an earlier event. The twist must follow logically from what the reader has already been shown.
+6. Ending: finish on a strong final image or an unanswered question. Do not explain a moral. Do not tell the reader what to feel.
+
 Requirements:
 
-- Hook the audience in the first paragraph.
-- Keep the story emotional.
-- Use simple English.
-- Make the story suitable for narration.
-- Include suspense where appropriate.
-- End with a satisfying conclusion.
+- Include at least 8 different visual moments (places, objects, weather, actions) that an illustrator could draw.
+- Show emotion through actions and details, not by naming feelings.
+- Keep every detail consistent. Never contradict something stated earlier.
+- Use simple English that sounds natural when spoken aloud.
+- Length: between {min_words} and {max_words} words. Do not go over {max_words} words.
+- Write only the words the narrator will speak. No text in parentheses or brackets, no music or sound cues, no pauses, no headings, no bold, no markdown.
+- Start the story immediately. Do not greet the audience.
+- Do not ask viewers to like, subscribe, or check any links.
 
 Return only the story.
