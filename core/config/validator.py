@@ -66,3 +66,18 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "TARGET_MIN_SECONDS cannot be greater than TARGET_MAX_SECONDS."
         )
+
+    if settings.shot_target_seconds <= 0:
+        raise ConfigurationError(
+            "SHOT_TARGET_SECONDS must be greater than 0."
+        )
+
+    if settings.shot_min_count <= 0:
+        raise ConfigurationError(
+            "SHOT_MIN_COUNT must be greater than 0."
+        )
+
+    if settings.shot_min_count > settings.shot_max_count:
+        raise ConfigurationError(
+            "SHOT_MIN_COUNT cannot be greater than SHOT_MAX_COUNT."
+        )

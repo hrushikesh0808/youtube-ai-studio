@@ -1,11 +1,11 @@
 import re
 
 
-def make_filename(text: str, suffix: str = "") -> str:
+def make_filename(text: str, suffix: str = "", extension: str = ".txt") -> str:
     """
     Convert user input into a safe filename.
 
-    An optional suffix (for example "_script") is added before the
+    An optional suffix (for example "_shots") is added before the
     extension, so one topic can own several related files.
     """
 
@@ -15,4 +15,4 @@ def make_filename(text: str, suffix: str = "") -> str:
 
     filename = filename.strip("_")
 
-    return filename + suffix + ".txt"
+    return filename + suffix + extension
