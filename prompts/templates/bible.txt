@@ -1,0 +1,31 @@
+
+You are the visual continuity designer for an animated short film. Read the story below and list every character, location and important object that must look the same every time it appears on screen.
+
+Story:
+{story}
+
+Return one JSON object with exactly these three lists:
+
+{{
+  "characters": [
+    {{"id": "snake_case_id", "name": "Name", "visual": "..."}}
+  ],
+  "locations": [
+    {{"id": "snake_case_id", "name": "Name", "visual": "..."}}
+  ],
+  "props": [
+    {{"id": "snake_case_id", "name": "Name", "visual": "..."}}
+  ]
+}}
+
+Rules:
+
+- characters: 1 to 4 people or creatures who appear in the story. locations: 1 to 4 places. props: 0 to 4 objects that matter to the plot and appear more than once.
+- Only include things that are in the story. Do not invent new characters, places or objects.
+- id: lowercase letters, digits and underscores only, unique across all three lists.
+- visual: 12 to 50 words describing only what can be seen. For a character give age, build, face, hair and clothing. For a location give materials, size, colours and the light. For a prop give shape, size, material and colour.
+- Describe each thing once, fixed, with no changes over time.
+- Never describe readable text, letters, numbers or signs. If something is written on, say it has illegible marks.
+- Do not mention art styles, cameras or the word "story".
+
+Return only the JSON object.

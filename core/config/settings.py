@@ -111,7 +111,15 @@ class Settings:
         self.shot_target_seconds: int = _get_int("SHOT_TARGET_SECONDS", 8)
         self.shot_min_count: int = _get_int("SHOT_MIN_COUNT", 15)
         self.shot_max_count: int = _get_int("SHOT_MAX_COUNT", 24)
-
+        
+                # Story bible / visual style
+        self.art_style: str = os.getenv(
+            "ART_STYLE",
+            "painterly anime style, soft cinematic lighting, "
+            "rich detailed backgrounds, muted moody colour palette",
+        )
+        self.bible_max_attempts: int = _get_int("BIBLE_MAX_ATTEMPTS", 3)
+        
         # Debug
         self.debug: bool = (
             os.getenv("DEBUG", "False").lower() == "true"

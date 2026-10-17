@@ -81,3 +81,13 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "SHOT_MIN_COUNT cannot be greater than SHOT_MAX_COUNT."
         )
+        
+    if not settings.art_style.strip():
+        raise ConfigurationError(
+            "ART_STYLE cannot be empty."
+        )
+
+    if settings.bible_max_attempts <= 0:
+        raise ConfigurationError(
+            "BIBLE_MAX_ATTEMPTS must be greater than 0."
+        )

@@ -5,11 +5,15 @@ Main application entry point.
 
 Usage:
     python main.py
-        Generate a story, approve it, then split it into timed shots.
+        Generate a story, approve it, split it into timed shots, then
+        build and approve the story bible (characters, locations, props).
 
     python main.py --story output/my_story.txt
-        Skip generation and the approval gate: split an already approved
-        story into timed shots.
+        Skip story generation and its approval gate: start from an already
+        approved story.
+
+    python main.py --story output/my_story.txt --shots-only
+        Only split the story into timed shots (no Ollama needed).
 """
 
 import argparse
@@ -21,10 +25,12 @@ from core.logging.logger import logger
 from core.constants.constants import PROJECT_NAME
 from core.constants.constants import PROJECT_VERSION
 from core.config.validator import validate_configuration
+from core.exceptions.exceptions import ProviderError
 from core.exceptions.exceptions import ValidationError
 from core.exceptions.exceptions import YouTubeAIStudioError
 from core.utils.file_utils import make_filename
 from core.utils.shot_splitter import build_shot_plan
+from core.utils.story_bible import format_bible
 from core.utils.text_metrics import count_words
 from core.utils.text_metrics import estimate_narration_seconds
 from core.workflow.approval_gate import ApprovalGate
@@ -32,6 +38,7 @@ from core.workflow.approval_gate import ApprovalGate
 from services.llm.ollama_provider import OllamaProvider
 from services.output.file_writer import FileWriter
 
+from agents.story_bible_generator import StoryBibleGenerator
 from agents.story_generator import StoryGenerator
 
 
@@ -45,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         help="Path to an already approved story (.txt). "
         "Skips story generation and the approval gate.",
+    )
+    parser.add_argument(
+        "--shots-only",
+        action="store_true",
+        help="Stop after the shot plan (skips the story bible, so Ollama is not needed).",
     )
     return parser.parse_args()
 
@@ -225,6 +237,62 @@ def run_shot_split(name: str, story: str, writer: FileWriter) -> None:
     logger.info(plan_path)
 
 
+def run_bible_stage(name: str, story: str, writer: FileWriter) -> bool:
+    """
+    Generate the story bible and run it through approval gate 2.
+
+    Returns True once the bible is approved and saved, False if the user quit.
+
+    Raises:
+        ProviderError: if Ollama is not reachable.
+        AgentError: if no valid bible could be produced.
+    """
+    provider = OllamaProvider()
+
+    if not provider.is_available():
+        raise ProviderError(
+            f"Ollama is not reachable at {settings.ollama_host}. "
+            "Start Ollama, or run with --shots-only."
+        )
+
+    generator = StoryBibleGenerator(provider)
+    gate = ApprovalGate("Story Bible (characters, locations, props)")
+
+    bible = generator.generate(story)
+
+    while True:
+        decision = gate.review(format_bible(bible))
+
+        if decision == "approve":
+            break
+
+        if decision == "regenerate":
+            logger.info("Regenerating story bible.")
+            bible = generator.generate(story)
+            continue
+
+        if decision == "edit":
+            print("Editing is not available at this gate yet. Choose A, R or Q.")
+            continue
+
+        if decision == "quit":
+            logger.info("Story bible stage aborted by user before approval. Nothing saved.")
+            return False
+
+    bible_path = writer.save(
+        make_filename(name, suffix="_bible", extension=".json"),
+        json.dumps(bible, indent=2, ensure_ascii=False),
+    )
+
+    logger.info("=" * 60)
+    logger.info("✅ Story bible approved and saved.")
+    logger.info("📄 Saved to:")
+    logger.info(bible_path)
+    logger.info("=" * 60)
+
+    return True
+
+
 def main():
     """Start the application."""
     args = parse_args()
@@ -253,6 +321,11 @@ def main():
             name, story = result
 
         run_shot_split(name, story, writer)
+
+        if args.shots_only:
+            logger.info("--shots-only given: skipping the story bible.")
+        else:
+            run_bible_stage(name, story, writer)
 
     except YouTubeAIStudioError as exc:
         logger.error("%s", exc)

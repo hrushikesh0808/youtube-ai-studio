@@ -35,7 +35,7 @@ class OllamaProvider(BaseProvider):
 
     def is_available(self) -> bool:
         """
-            Check whether Ollama is available.
+        Check whether Ollama is available.
         """
         try:
             response = self.client.get(f"{self.base_url}/api/tags")
@@ -44,7 +44,7 @@ class OllamaProvider(BaseProvider):
 
         except Exception:
             return False
-        
+
     def list_models(self) -> list[str]:
         """
         Return all installed Ollama models.
@@ -60,15 +60,26 @@ class OllamaProvider(BaseProvider):
             for model in data.get("models", [])
         ]
 
-    def generate(self, prompt: str, model: str | None = None) -> str:
+    def generate(
+        self,
+        prompt: str,
+        model: str | None = None,
+        json_mode: bool = False,
+    ) -> str:
         """
         Generate text using Ollama.
+
+        With json_mode=True Ollama constrains the reply to valid JSON
+        (the prompt must still ask for JSON).
         """
         payload = {
             "model": model or settings.default_model,
             "prompt": prompt,
             "stream": False,
         }
+
+        if json_mode:
+            payload["format"] = "json"
 
         if settings.ollama_temperature is not None:
             payload["options"] = {"temperature": settings.ollama_temperature}
@@ -77,7 +88,7 @@ class OllamaProvider(BaseProvider):
             f"{self.base_url}/api/generate",
             json=payload,
         )
-        
+
         response.raise_for_status()
 
         data = response.json()
