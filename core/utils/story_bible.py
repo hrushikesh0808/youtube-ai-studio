@@ -1,4 +1,3 @@
-
 """
 Story Bible Utilities
 
@@ -13,8 +12,8 @@ import re
 from core.exceptions.exceptions import ValidationError
 
 MAX_CHARACTERS = 4
-MAX_LOCATIONS = 4
-MAX_PROPS = 4
+MAX_LOCATIONS = 5
+MAX_PROPS = 6
 MIN_VISUAL_WORDS = 8
 MAX_VISUAL_CHARS = 600
 MAX_NAME_CHARS = 60
@@ -27,6 +26,29 @@ _GROUPS = (
     ("locations", 1, MAX_LOCATIONS),
     ("props", 0, MAX_PROPS),
 )
+
+_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "visual": {"type": "string"},
+    },
+    "required": ["id", "name", "visual"],
+}
+
+# JSON Schema sent to Ollama so the model must return all three lists
+# (plain JSON mode lets small models answer with an empty object).
+# Counts and text rules are enforced afterwards by validate_bible().
+BIBLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "characters": {"type": "array", "items": _ITEM_SCHEMA},
+        "locations": {"type": "array", "items": _ITEM_SCHEMA},
+        "props": {"type": "array", "items": _ITEM_SCHEMA},
+    },
+    "required": ["characters", "locations", "props"],
+}
 
 _SKIPPED_NAME_WORDS = {"the", "and", "old", "young", "mr", "mrs", "dr"}
 
@@ -41,6 +63,24 @@ def _text(value) -> str:
 def _slug(value: str) -> str:
     """Turn any text into a snake_case identifier."""
     return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
+def _as_item_list(items):
+    """
+    Accept the shapes small models commonly return instead of a list:
+    a single item object, or an object mapping ids to item objects.
+    Anything else is returned unchanged so validation can report it.
+    """
+    if not isinstance(items, dict):
+        return items
+
+    if "name" in items or "visual" in items:
+        return [items]
+
+    if items and all(isinstance(v, dict) for v in items.values()):
+        return [{"id": key, **value} for key, value in items.items()]
+
+    return items
 
 
 def extract_json(raw: str) -> dict:
@@ -96,10 +136,13 @@ def validate_bible(data: dict) -> dict:
     seen_ids = set()
 
     for key, minimum, maximum in _GROUPS:
-        items = data.get(key, [] if minimum == 0 else None)
+        items = _as_item_list(data.get(key, [] if minimum == 0 else None))
 
         if not isinstance(items, list):
-            problems.append(f'"{key}" must be a list.')
+            problems.append(
+                f'"{key}" must be a JSON list of objects, like [{{"id": ..., '
+                f'"name": ..., "visual": ...}}].'
+            )
             continue
 
         if not minimum <= len(items) <= maximum:
@@ -120,6 +163,12 @@ def validate_bible(data: dict) -> dict:
             name = _text(item.get("name"))
             visual = _text(item.get("visual"))
             item_id = _slug(_text(item.get("id")) or name)
+
+            # Models often copy a numbered placeholder ("silas_1"): drop the
+            # number unless that would clash with another id.
+            unnumbered = re.sub(r"_\d+$", "", item_id)
+            if unnumbered and unnumbered != item_id and unnumbered not in seen_ids:
+                item_id = unnumbered
 
             if not name:
                 problems.append(f'{label} needs a non-empty "name".')
@@ -159,23 +208,28 @@ def validate_bible(data: dict) -> dict:
 
 def bible_warnings(bible: dict, story: str) -> list[str]:
     """
-    Soft checks that should not block the bible: characters that are
-    never mentioned in the story.
+    Soft checks that should not block the bible: characters, locations
+    or props whose name never appears in the story.
     """
     story_lower = story.lower()
     warnings = []
 
-    for character in bible.get("characters", []):
-        words = [
-            w
-            for w in re.findall(r"[a-z]+", character["name"].lower())
-            if len(w) >= 3 and w not in _SKIPPED_NAME_WORDS
-        ]
+    for key, label in (
+        ("characters", "Character"),
+        ("locations", "Location"),
+        ("props", "Prop"),
+    ):
+        for item in bible.get(key, []):
+            words = [
+                w
+                for w in re.findall(r"[a-z]+", item["name"].lower())
+                if len(w) >= 3 and w not in _SKIPPED_NAME_WORDS
+            ]
 
-        if words and not any(w in story_lower for w in words):
-            warnings.append(
-                f"Character '{character['name']}' is never mentioned in the story."
-            )
+            if words and not any(w in story_lower for w in words):
+                warnings.append(
+                    f"{label} '{item['name']}' is never mentioned in the story."
+                )
 
     return warnings
 

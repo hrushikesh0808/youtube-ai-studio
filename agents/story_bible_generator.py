@@ -1,4 +1,3 @@
-
 """
 Story Bible Generator Agent
 
@@ -10,6 +9,10 @@ from core.config.settings import settings
 from core.exceptions.exceptions import AgentError
 from core.exceptions.exceptions import ValidationError
 from core.logging.logger import logger
+from core.utils.story_bible import BIBLE_SCHEMA
+from core.utils.story_bible import MAX_CHARACTERS
+from core.utils.story_bible import MAX_LOCATIONS
+from core.utils.story_bible import MAX_PROPS
 from core.utils.story_bible import bible_warnings
 from core.utils.story_bible import extract_json
 from core.utils.story_bible import validate_bible
@@ -37,20 +40,27 @@ class StoryBibleGenerator:
             AgentError: if no valid bible is produced within the allowed attempts.
         """
         attempts = settings.bible_max_attempts
-        base_prompt = self.prompt_loader.load("bible.txt", story=story)
+        base_prompt = self.prompt_loader.load(
+            "bible.txt",
+            story=story,
+            max_characters=MAX_CHARACTERS,
+            max_locations=MAX_LOCATIONS,
+            max_props=MAX_PROPS,
+        )
         prompt = base_prompt
         last_problem = ""
 
         for attempt in range(1, attempts + 1):
             logger.info("Story bible: attempt %d of %d", attempt, attempts)
 
-            raw = self.provider.generate(prompt, json_mode=True)
+            raw = self.provider.generate(prompt, json_schema=BIBLE_SCHEMA)
 
             try:
                 bible = validate_bible(extract_json(raw))
             except ValidationError as exc:
                 last_problem = str(exc)
                 logger.warning("Story bible attempt %d rejected: %s", attempt, last_problem)
+                logger.warning("Start of the rejected reply: %s", " ".join(raw.split())[:300])
 
                 prompt = (
                     base_prompt

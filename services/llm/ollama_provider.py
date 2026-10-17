@@ -6,8 +6,11 @@ Provides communication with the local Ollama server.
 
 from typing import Any
 
+import requests
+
 from core.base.provider import BaseProvider
 from core.config.settings import settings
+from core.exceptions.exceptions import ProviderError
 from services.network.http_client import HttpClient
 
 
@@ -65,12 +68,18 @@ class OllamaProvider(BaseProvider):
         prompt: str,
         model: str | None = None,
         json_mode: bool = False,
+        json_schema: dict | None = None,
     ) -> str:
         """
         Generate text using Ollama.
 
-        With json_mode=True Ollama constrains the reply to valid JSON
-        (the prompt must still ask for JSON).
+        json_mode=True constrains the reply to valid JSON of any shape.
+        json_schema=<JSON Schema dict> constrains it to that structure
+        (needs Ollama 0.5 or newer) and takes priority over json_mode.
+        The prompt must still ask for JSON in both cases.
+
+        Raises:
+            ProviderError: if Ollama cannot be reached or returns an error.
         """
         payload = {
             "model": model or settings.default_model,
@@ -78,18 +87,29 @@ class OllamaProvider(BaseProvider):
             "stream": False,
         }
 
-        if json_mode:
+        if json_schema is not None:
+            payload["format"] = json_schema
+        elif json_mode:
             payload["format"] = "json"
 
         if settings.ollama_temperature is not None:
             payload["options"] = {"temperature": settings.ollama_temperature}
 
-        response = self.client.post(
-            f"{self.base_url}/api/generate",
-            json=payload,
-        )
+        try:
+            response = self.client.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+            )
+        except requests.RequestException as exc:
+            raise ProviderError(
+                f"Could not reach Ollama at {self.base_url}: {exc}"
+            ) from exc
 
-        response.raise_for_status()
+        if not response.ok:
+            raise ProviderError(
+                f"Ollama returned HTTP {response.status_code}: "
+                f"{response.text.strip()[:300]}"
+            )
 
         data = response.json()
 
