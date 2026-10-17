@@ -51,3 +51,18 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "DATA_DIR cannot be empty."
         )
+
+    if settings.narration_wpm <= 0:
+        raise ConfigurationError(
+            "NARRATION_WPM must be greater than 0."
+        )
+
+    if settings.target_min_seconds <= 0:
+        raise ConfigurationError(
+            "TARGET_MIN_SECONDS must be greater than 0."
+        )
+
+    if settings.target_min_seconds > settings.target_max_seconds:
+        raise ConfigurationError(
+            "TARGET_MIN_SECONDS cannot be greater than TARGET_MAX_SECONDS."
+        )

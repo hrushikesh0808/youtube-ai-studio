@@ -10,12 +10,55 @@ from core.constants.constants import PROJECT_NAME
 from core.constants.constants import PROJECT_VERSION
 from core.config.validator import validate_configuration
 from core.utils.file_utils import make_filename
+from core.utils.text_metrics import count_words
+from core.utils.text_metrics import estimate_narration_seconds
 from core.workflow.approval_gate import ApprovalGate
 
 from services.llm.ollama_provider import OllamaProvider
 from services.output.file_writer import FileWriter
 
 from agents.story_generator import StoryGenerator
+
+
+def report_length(label: str, text: str) -> None:
+    """
+    Log word count and estimated narration time against the target range.
+    """
+    words = count_words(text)
+    seconds = estimate_narration_seconds(text, settings.narration_wpm)
+
+    logger.info(
+        "%s length: %d words (~%d s narrated, target %d-%d s)",
+        label,
+        words,
+        seconds,
+        settings.target_min_seconds,
+        settings.target_max_seconds,
+    )
+
+    if seconds < settings.target_min_seconds:
+        logger.warning(
+            "%s is shorter than the target (%d s < %d s).",
+            label,
+            seconds,
+            settings.target_min_seconds,
+        )
+    elif seconds > settings.target_max_seconds:
+        logger.warning(
+            "%s is longer than the target (%d s > %d s).",
+            label,
+            seconds,
+            settings.target_max_seconds,
+        )
+
+
+def generate_story(story_generator: StoryGenerator, topic: str) -> str:
+    """
+    Generate a story and report its length.
+    """
+    story = story_generator.generate(topic)
+    report_length("Story", story)
+    return story
 
 
 def main():
@@ -49,7 +92,7 @@ def main():
         logger.error("Topic cannot be empty. Aborting.")
         return
 
-    story = story_generator.generate(topic)
+    story = generate_story(story_generator, topic)
 
     # Approval gate 1: Story (per automation policy — do not proceed
     # until a human approves the story).
@@ -61,7 +104,7 @@ def main():
 
         if decision == "regenerate":
             logger.info("Regenerating story for topic: %s", topic)
-            story = story_generator.generate(topic)
+            story = generate_story(story_generator, topic)
             continue
 
         if decision == "edit":
@@ -71,7 +114,7 @@ def main():
                 continue
             topic = new_topic
             logger.info("Generating story for new topic: %s", topic)
-            story = story_generator.generate(topic)
+            story = generate_story(story_generator, topic)
             continue
 
         if decision == "quit":
@@ -79,13 +122,13 @@ def main():
             return
 
     # Only save once the story has passed the approval gate.
-    filename = make_filename(topic)
-    file_path = writer.save(filename, story)
+    # The approved story is the narration script: later stages read this file.
+    story_path = writer.save(make_filename(topic), story)
 
     logger.info("=" * 60)
-    logger.info("✅ Story approved and saved.")
+    logger.info("✅ Story approved and saved (this is the narration script).")
     logger.info("📄 Saved to:")
-    logger.info(file_path)
+    logger.info(story_path)
     logger.info("=" * 60)
 
     print(f"Version        : {PROJECT_VERSION}")

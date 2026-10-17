@@ -9,17 +9,19 @@ Story:
 Requirements:
 
 - Keep the original story intact.
+- Do NOT add new characters, facts, or events. Keep every name and detail exactly as in the story.
 - Improve pacing and flow.
 - Use natural conversational English.
 - Add emotional impact where appropriate.
 - Make transitions smooth.
 - Remove unnecessary repetition.
-- Do NOT add camera directions.
-- Do NOT add background music instructions.
-- Do NOT add editing notes.
+- Length: between {min_words} and {max_words} words. The script must not be longer than the story.
+- Write only the words the narrator will speak. No text in parentheses or brackets, no camera directions, no background music or sound cues, no pauses, no editing notes, no headings, no bold, no markdown.
+- Start the script immediately. Do not greet the audience.
+- Do not ask viewers to like, subscribe, or check any links.
 - Make it suitable for AI voice narration.
 - Keep viewers engaged from beginning to end.
 - End with a memorable conclusion.
-- After the script is generated or edited, it should not sound AI-generated or robotic. Instead, it should read as though it was written by a professional human storyteller, with a natural flow, engaging narrative, and emotionally compelling language. The final output should feel authentic and suitable for a high-quality YouTube audience. 
+- After the script is generated or edited, it should not sound AI-generated or robotic. Instead, it should read as though it was written by a professional human storyteller, with a natural flow, engaging narrative, and emotionally compelling language. The final output should feel authentic and suitable for a high-quality YouTube audience.
 
 Return only the narration script.

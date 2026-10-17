@@ -31,5 +31,7 @@ build/
 dist/
 
 # IDE
-.idea/__pycache__/
+.idea/
+
+# Generated output
 output/

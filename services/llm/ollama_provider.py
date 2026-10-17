@@ -70,6 +70,9 @@ class OllamaProvider(BaseProvider):
             "stream": False,
         }
 
+        if settings.ollama_temperature is not None:
+            payload["options"] = {"temperature": settings.ollama_temperature}
+
         response = self.client.post(
             f"{self.base_url}/api/generate",
             json=payload,
