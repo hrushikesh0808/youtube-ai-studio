@@ -120,6 +120,9 @@ class Settings:
         )
         self.bible_max_attempts: int = _get_int("BIBLE_MAX_ATTEMPTS", 3)
         
+        # Per-shot design
+        self.shot_design_max_attempts: int = _get_int("SHOT_DESIGN_MAX_ATTEMPTS", 3)
+        
         # Debug
         self.debug: bool = (
             os.getenv("DEBUG", "False").lower() == "true"

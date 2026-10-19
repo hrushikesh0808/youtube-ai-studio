@@ -5,15 +5,21 @@ Main application entry point.
 
 Usage:
     python main.py
-        Generate a story, approve it, split it into timed shots, then
-        build and approve the story bible (characters, locations, props).
+        Generate a story, approve it, split it into timed shots, build and
+        approve the story bible, then design every shot.
 
     python main.py --story output/my_story.txt
         Skip story generation and its approval gate: start from an already
         approved story.
 
+    python main.py --story output/my_story.txt --use-saved-bible
+        Use the saved (possibly hand-edited) story bible instead of
+        generating a new one.
+
     python main.py --story output/my_story.txt --shots-only
         Only split the story into timed shots (no Ollama needed).
+
+    Add --redesign to ignore saved shot designs and design every shot again.
 """
 
 import argparse
@@ -29,8 +35,16 @@ from core.exceptions.exceptions import ProviderError
 from core.exceptions.exceptions import ValidationError
 from core.exceptions.exceptions import YouTubeAIStudioError
 from core.utils.file_utils import make_filename
+from core.utils.file_utils import write_text_atomic
+from core.utils.shot_design import format_design_table
+from core.utils.shot_design import inputs_hash
+from core.utils.shot_design import load_progress
+from core.utils.shot_design import progress_document
 from core.utils.shot_splitter import build_shot_plan
+from core.utils.story_bible import extract_json
 from core.utils.story_bible import format_bible
+from core.utils.story_bible import load_bible_file
+from core.utils.story_bible import validate_bible
 from core.utils.text_metrics import count_words
 from core.utils.text_metrics import estimate_narration_seconds
 from core.workflow.approval_gate import ApprovalGate
@@ -38,6 +52,7 @@ from core.workflow.approval_gate import ApprovalGate
 from services.llm.ollama_provider import OllamaProvider
 from services.output.file_writer import FileWriter
 
+from agents.shot_designer import ShotDesigner
 from agents.story_bible_generator import StoryBibleGenerator
 from agents.story_generator import StoryGenerator
 
@@ -57,6 +72,16 @@ def parse_args() -> argparse.Namespace:
         "--shots-only",
         action="store_true",
         help="Stop after the shot plan (skips the story bible, so Ollama is not needed).",
+    )
+    parser.add_argument(
+        "--use-saved-bible",
+        action="store_true",
+        help="Use the saved story bible file (validated) instead of generating one.",
+    )
+    parser.add_argument(
+        "--redesign",
+        action="store_true",
+        help="Ignore saved shot designs and design every shot again.",
     )
     return parser.parse_args()
 
@@ -188,9 +213,9 @@ def generate_approved_story(writer: FileWriter) -> tuple[str, str] | None:
     return topic, story
 
 
-def run_shot_split(name: str, story: str, writer: FileWriter) -> None:
+def run_shot_split(name: str, story: str, writer: FileWriter) -> dict:
     """
-    Split the approved story into timed shots and save the shot plan.
+    Split the approved story into timed shots, save the shot plan and return it.
     """
     plan = build_shot_plan(
         source=name,
@@ -236,16 +261,12 @@ def run_shot_split(name: str, story: str, writer: FileWriter) -> None:
     logger.info("📄 Shot plan saved to:")
     logger.info(plan_path)
 
+    return plan
 
-def run_bible_stage(name: str, story: str, writer: FileWriter) -> bool:
+
+def require_ollama() -> OllamaProvider:
     """
-    Generate the story bible and run it through approval gate 2.
-
-    Returns True once the bible is approved and saved, False if the user quit.
-
-    Raises:
-        ProviderError: if Ollama is not reachable.
-        AgentError: if no valid bible could be produced.
+    Return an Ollama provider, or raise ProviderError if Ollama is not reachable.
     """
     provider = OllamaProvider()
 
@@ -255,8 +276,61 @@ def run_bible_stage(name: str, story: str, writer: FileWriter) -> bool:
             "Start Ollama, or run with --shots-only."
         )
 
+    return provider
+
+
+def edit_bible_by_hand(bible: dict, draft_path: Path) -> dict:
+    """
+    Let the user fix the bible in a text editor.
+
+    The bible is written to a draft file; after the user saves it, it is
+    read back and validated. Returns the edited bible, or the original one
+    if the user cancels.
+    """
+    write_text_atomic(draft_path, json.dumps(bible, indent=2, ensure_ascii=False))
+
+    print(f"\nThe bible was written to:\n  {draft_path}")
+    print("Open it in your editor, change what you need, and save it.")
+
+    while True:
+        answer = input("Press Enter when saved (or type C to cancel)\n> ").strip().lower()
+
+        if answer in ("c", "cancel"):
+            logger.info("Edit cancelled; keeping the previous bible.")
+            return bible
+
+        try:
+            data = extract_json(draft_path.read_text(encoding="utf-8"))
+            cleaned = validate_bible(data)
+        except ValidationError as exc:
+            print(f"\nThe edited file is not valid:\n{exc}")
+            print("Fix it and save again.")
+            continue
+        except OSError as exc:
+            print(f"\nCould not read the file: {exc}")
+            continue
+
+        art_style = " ".join(str(data.get("art_style") or "").split()) or bible["art_style"]
+
+        logger.info("Edited bible accepted.")
+        return {"art_style": art_style, **cleaned}
+
+
+def run_bible_stage(name: str, story: str, writer: FileWriter) -> dict | None:
+    """
+    Generate the story bible and run it through approval gate 2.
+
+    Returns the approved bible (saved to disk), or None if the user quit.
+
+    Raises:
+        ProviderError: if Ollama is not reachable.
+        AgentError: if no valid bible could be produced.
+    """
+    provider = require_ollama()
+
     generator = StoryBibleGenerator(provider)
     gate = ApprovalGate("Story Bible (characters, locations, props)")
+    draft_path = writer.path(make_filename(name, suffix="_bible_draft", extension=".json"))
 
     bible = generator.generate(story)
 
@@ -272,17 +346,20 @@ def run_bible_stage(name: str, story: str, writer: FileWriter) -> bool:
             continue
 
         if decision == "edit":
-            print("Editing is not available at this gate yet. Choose A, R or Q.")
+            bible = edit_bible_by_hand(bible, draft_path)
             continue
 
         if decision == "quit":
             logger.info("Story bible stage aborted by user before approval. Nothing saved.")
-            return False
+            return None
 
     bible_path = writer.save(
         make_filename(name, suffix="_bible", extension=".json"),
         json.dumps(bible, indent=2, ensure_ascii=False),
     )
+
+    if draft_path.exists():
+        draft_path.unlink()
 
     logger.info("=" * 60)
     logger.info("✅ Story bible approved and saved.")
@@ -290,7 +367,84 @@ def run_bible_stage(name: str, story: str, writer: FileWriter) -> bool:
     logger.info(bible_path)
     logger.info("=" * 60)
 
-    return True
+    return bible
+
+
+def load_saved_bible(name: str, writer: FileWriter) -> dict:
+    """
+    Load and validate the saved story bible for this story.
+
+    Raises:
+        ValidationError: if it is missing or invalid.
+    """
+    path = writer.path(make_filename(name, suffix="_bible", extension=".json"))
+
+    if not path.is_file():
+        raise ValidationError(
+            f"No saved story bible at {path}. Run once without --use-saved-bible."
+        )
+
+    bible = load_bible_file(path)
+
+    logger.info("Using saved story bible: %s", path)
+    return bible
+
+
+def run_shot_design(
+    name: str,
+    plan: dict,
+    bible: dict,
+    writer: FileWriter,
+    redesign: bool,
+) -> None:
+    """
+    Design every shot (resuming from saved progress) and save the designs.
+
+    Raises:
+        ProviderError: if Ollama is not reachable.
+        AgentError: if a shot cannot be designed (earlier shots stay saved).
+    """
+    shots = plan["shots"]
+    filename = make_filename(name, suffix="_designs", extension=".json")
+    designs_path = writer.path(filename)
+    fingerprint = inputs_hash(shots, bible)
+
+    if redesign:
+        logger.info("--redesign given: ignoring saved shot designs.")
+        entries, complete = [], False
+    else:
+        entries, complete = load_progress(designs_path, fingerprint, len(shots))
+
+    if complete:
+        logger.info("All %d shots are already designed (use --redesign to redo them).", len(shots))
+    else:
+        designer = ShotDesigner(require_ollama())
+
+        def save_progress(current: list[dict]) -> None:
+            writer.save(
+                filename,
+                json.dumps(
+                    progress_document(name, fingerprint, current, complete=False),
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            )
+
+        entries = designer.design_all(bible, shots, entries, on_progress=save_progress)
+
+        writer.save(
+            filename,
+            json.dumps(
+                progress_document(name, fingerprint, entries, complete=True),
+                indent=2,
+                ensure_ascii=False,
+            ),
+        )
+
+    print("\n" + format_design_table(entries))
+
+    logger.info("📄 Shot designs saved to:")
+    logger.info(designs_path)
 
 
 def main():
@@ -320,12 +474,20 @@ def main():
 
             name, story = result
 
-        run_shot_split(name, story, writer)
+        plan = run_shot_split(name, story, writer)
 
         if args.shots_only:
-            logger.info("--shots-only given: skipping the story bible.")
+            logger.info("--shots-only given: stopping after the shot plan.")
         else:
-            run_bible_stage(name, story, writer)
+            if args.use_saved_bible:
+                bible = load_saved_bible(name, writer)
+            else:
+                bible = run_bible_stage(name, story, writer)
+
+            if bible is None:
+                return
+
+            run_shot_design(name, plan, bible, writer, args.redesign)
 
     except YouTubeAIStudioError as exc:
         logger.error("%s", exc)

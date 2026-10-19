@@ -91,3 +91,9 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "BIBLE_MAX_ATTEMPTS must be greater than 0."
         )
+        
+    
+    if settings.shot_design_max_attempts <= 0:
+        raise ConfigurationError(
+            "SHOT_DESIGN_MAX_ATTEMPTS must be greater than 0."
+        )

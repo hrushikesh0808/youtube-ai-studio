@@ -8,7 +8,9 @@ description) that every later stage reuses so the video stays consistent.
 
 import json
 import re
+from pathlib import Path
 
+from core.config.settings import settings
 from core.exceptions.exceptions import ValidationError
 
 MAX_CHARACTERS = 4
@@ -205,6 +207,32 @@ def validate_bible(data: dict) -> dict:
 
     return cleaned
 
+
+def load_bible_file(path: Path) -> dict:
+    """
+    Load and validate a saved story bible (for example one fixed by hand).
+
+    Raises:
+        ValidationError: if the file is missing, unreadable or invalid.
+    """
+    path = Path(path)
+
+    if not path.is_file():
+        raise ValidationError(f"Story bible file not found: {path}")
+
+    try:
+        data = extract_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:
+        raise ValidationError(f"{path.name}: {exc}")
+
+    try:
+        cleaned = validate_bible(data)
+    except ValidationError as exc:
+        raise ValidationError(f"{path.name}: {exc}")
+
+    art_style = _text(data.get("art_style")) or settings.art_style
+
+    return {"art_style": art_style, **cleaned}
 
 def bible_warnings(bible: dict, story: str) -> list[str]:
     """
