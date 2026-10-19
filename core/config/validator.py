@@ -97,3 +97,8 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "SHOT_DESIGN_MAX_ATTEMPTS must be greater than 0."
         )
+
+    if not 200 <= settings.image_prompt_max_chars <= 2048:
+        raise ConfigurationError(
+            "IMAGE_PROMPT_MAX_CHARS must be between 200 and 2048."
+        )

@@ -20,6 +20,10 @@ Usage:
         Only split the story into timed shots (no Ollama needed).
 
     Add --redesign to ignore saved shot designs and design every shot again.
+
+    python main.py --story output/my_story.txt --use-saved-bible --image-prompts
+        After the shot designs, build and save the image prompt of every
+        shot for review. No images are generated.
 """
 
 import argparse
@@ -36,6 +40,9 @@ from core.exceptions.exceptions import ValidationError
 from core.exceptions.exceptions import YouTubeAIStudioError
 from core.utils.file_utils import make_filename
 from core.utils.file_utils import write_text_atomic
+from core.utils.image_prompt import build_all_prompts
+from core.utils.image_prompt import format_prompt_report
+from core.utils.image_prompt import prompts_document
 from core.utils.shot_design import format_design_table
 from core.utils.shot_design import inputs_hash
 from core.utils.shot_design import load_progress
@@ -82,6 +89,11 @@ def parse_args() -> argparse.Namespace:
         "--redesign",
         action="store_true",
         help="Ignore saved shot designs and design every shot again.",
+    )
+    parser.add_argument(
+        "--image-prompts",
+        action="store_true",
+        help="Build and save the image prompt of every shot for review (no images are generated).",
     )
     return parser.parse_args()
 
@@ -396,9 +408,9 @@ def run_shot_design(
     bible: dict,
     writer: FileWriter,
     redesign: bool,
-) -> None:
+) -> list[dict]:
     """
-    Design every shot (resuming from saved progress) and save the designs.
+    Design every shot (resuming from saved progress), save the designs and return them.
 
     Raises:
         ProviderError: if Ollama is not reachable.
@@ -446,6 +458,30 @@ def run_shot_design(
     logger.info("📄 Shot designs saved to:")
     logger.info(designs_path)
 
+    return entries
+
+
+def run_image_prompts(name: str, bible: dict, entries: list[dict], writer: FileWriter) -> None:
+    """
+    Build the image prompt of every shot, show them for review and save them.
+
+    Raises:
+        ValidationError: if a shot refers to something missing from the bible,
+            or a prompt cannot be shortened enough.
+    """
+    max_chars = settings.image_prompt_max_chars
+    items = build_all_prompts(bible, entries, max_chars)
+
+    path = writer.save(
+        make_filename(name, suffix="_prompts", extension=".json"),
+        json.dumps(prompts_document(name, max_chars, items), indent=2, ensure_ascii=False),
+    )
+
+    print("\n" + format_prompt_report(items, max_chars))
+
+    logger.info("📄 Image prompts saved to:")
+    logger.info(path)
+
 
 def main():
     """Start the application."""
@@ -487,7 +523,10 @@ def main():
             if bible is None:
                 return
 
-            run_shot_design(name, plan, bible, writer, args.redesign)
+            entries = run_shot_design(name, plan, bible, writer, args.redesign)
+
+            if args.image_prompts:
+                run_image_prompts(name, bible, entries, writer)
 
     except YouTubeAIStudioError as exc:
         logger.error("%s", exc)

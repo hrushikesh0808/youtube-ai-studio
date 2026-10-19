@@ -122,6 +122,9 @@ class Settings:
         
         # Per-shot design
         self.shot_design_max_attempts: int = _get_int("SHOT_DESIGN_MAX_ATTEMPTS", 3)
+
+        # Image prompts (FLUX reads only the first part of a long prompt)
+        self.image_prompt_max_chars: int = _get_int("IMAGE_PROMPT_MAX_CHARS", 900)
         
         # Debug
         self.debug: bool = (
