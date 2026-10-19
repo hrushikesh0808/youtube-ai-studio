@@ -202,7 +202,7 @@ def parse_args(argv=None):
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--steps", type=int, default=4, help=f"1 to {MAX_STEPS} (default 4).")
-    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--seed", type=int, default=None, help="Sent only if given (Cloudflare rejected it in testing).")
     parser.add_argument("--runs", type=int, default=2)
     parser.add_argument("--width", type=int, default=None, help="Sent only if given (not documented by Cloudflare).")
     parser.add_argument("--height", type=int, default=None, help="Sent only if given (not documented by Cloudflare).")
@@ -232,7 +232,9 @@ def run(args, environ=None, env_file: Path = Path(".env"), opener=urllib.request
     timings, sizes, blanks = [], [], 0
 
     for index in range(args.runs):
-        payload = {"prompt": args.prompt, "steps": args.steps, "seed": args.seed + index}
+        payload = {"prompt": args.prompt, "steps": args.steps}
+        if args.seed is not None:
+            payload["seed"] = args.seed + index
         if args.width is not None:
             payload["width"] = args.width
             payload["height"] = args.height
