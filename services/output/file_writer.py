@@ -7,6 +7,7 @@ Responsible for saving generated content.
 from pathlib import Path
 
 from core.config.settings import settings
+from core.utils.file_utils import write_bytes_atomic
 from core.utils.file_utils import write_text_atomic
 
 
@@ -27,5 +28,13 @@ class FileWriter:
         file_path = self.path(filename)
 
         write_text_atomic(file_path, content)
+
+        return file_path
+
+    def save_bytes(self, filename: str, data: bytes) -> Path:
+        """Save a binary file (for example a picture) atomically and return its path."""
+        file_path = self.path(filename)
+
+        write_bytes_atomic(file_path, data)
 
         return file_path

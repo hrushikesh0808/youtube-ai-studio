@@ -36,3 +36,20 @@ def write_text_atomic(path: Path, content: str) -> None:
     finally:
         if temp_path.exists():
             temp_path.unlink()
+
+
+def write_bytes_atomic(path: Path, data: bytes) -> None:
+    """
+    Write a binary file (for example a picture) so that it is either fully
+    written or untouched. Missing folders are created.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(path.name + ".tmp")
+
+    try:
+        temp_path.write_bytes(data)
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()

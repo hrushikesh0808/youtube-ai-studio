@@ -102,3 +102,28 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "IMAGE_PROMPT_MAX_CHARS must be between 200 and 2048."
         )
+
+    if settings.image_provider not in ("cloudflare",):
+        raise ConfigurationError(
+            "IMAGE_PROVIDER must be: cloudflare."
+        )
+
+    if not 1 <= settings.image_steps <= 8:
+        raise ConfigurationError(
+            "IMAGE_STEPS must be between 1 and 8."
+        )
+
+    if not 1 <= settings.image_candidates <= 6:
+        raise ConfigurationError(
+            "IMAGE_CANDIDATES must be between 1 and 6."
+        )
+
+    if settings.video_width <= 0 or settings.video_height <= 0:
+        raise ConfigurationError(
+            "VIDEO_WIDTH and VIDEO_HEIGHT must be greater than 0."
+        )
+
+    if not 0.0 <= settings.image_crop_bias <= 1.0:
+        raise ConfigurationError(
+            "IMAGE_CROP_BIAS must be between 0 and 1 (0 = top, 1 = bottom)."
+        )

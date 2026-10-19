@@ -24,6 +24,12 @@ Usage:
     python main.py --story output/my_story.txt --use-saved-bible --image-prompts
         After the shot designs, build and save the image prompt of every
         shot for review. No images are generated.
+
+    python main.py --story output/my_story.txt --use-saved-bible --keyframes 1,2,8
+        Generate candidate pictures (IMAGE_CANDIDATES per shot) for the chosen
+        shots: a list such as 1,2,8, a range such as 1-3, or all. Needs the
+        Cloudflare settings in .env. Pictures already made are kept; add
+        --regen-keyframes to make them again.
 """
 
 import argparse
@@ -43,6 +49,9 @@ from core.utils.file_utils import write_text_atomic
 from core.utils.image_prompt import build_all_prompts
 from core.utils.image_prompt import format_prompt_report
 from core.utils.image_prompt import prompts_document
+from core.utils.keyframes import format_keyframe_report
+from core.utils.keyframes import load_manifest
+from core.utils.keyframes import parse_shot_selection
 from core.utils.shot_design import format_design_table
 from core.utils.shot_design import inputs_hash
 from core.utils.shot_design import load_progress
@@ -56,9 +65,11 @@ from core.utils.text_metrics import count_words
 from core.utils.text_metrics import estimate_narration_seconds
 from core.workflow.approval_gate import ApprovalGate
 
+from services.image.image_factory import create_image_provider
 from services.llm.ollama_provider import OllamaProvider
 from services.output.file_writer import FileWriter
 
+from agents.keyframe_generator import KeyframeGenerator
 from agents.shot_designer import ShotDesigner
 from agents.story_bible_generator import StoryBibleGenerator
 from agents.story_generator import StoryGenerator
@@ -94,6 +105,16 @@ def parse_args() -> argparse.Namespace:
         "--image-prompts",
         action="store_true",
         help="Build and save the image prompt of every shot for review (no images are generated).",
+    )
+    parser.add_argument(
+        "--keyframes",
+        metavar="SHOTS",
+        help="Generate candidate pictures for these shots: a list (1,2,8), a range (1-3) or all.",
+    )
+    parser.add_argument(
+        "--regen-keyframes",
+        action="store_true",
+        help="Make the chosen keyframes again even if pictures already exist.",
     )
     return parser.parse_args()
 
@@ -461,9 +482,15 @@ def run_shot_design(
     return entries
 
 
-def run_image_prompts(name: str, bible: dict, entries: list[dict], writer: FileWriter) -> None:
+def run_image_prompts(
+    name: str,
+    bible: dict,
+    entries: list[dict],
+    writer: FileWriter,
+    show: bool = True,
+) -> list[dict]:
     """
-    Build the image prompt of every shot, show them for review and save them.
+    Build the image prompt of every shot, save them, return them (and show them for review if asked).
 
     Raises:
         ValidationError: if a shot refers to something missing from the bible,
@@ -477,10 +504,90 @@ def run_image_prompts(name: str, bible: dict, entries: list[dict], writer: FileW
         json.dumps(prompts_document(name, max_chars, items), indent=2, ensure_ascii=False),
     )
 
-    print("\n" + format_prompt_report(items, max_chars))
+    if show:
+        print("\n" + format_prompt_report(items, max_chars))
 
     logger.info("📄 Image prompts saved to:")
     logger.info(path)
+
+    return items
+
+
+def run_keyframes(
+    name: str,
+    items: list[dict],
+    writer: FileWriter,
+    selection: str,
+    regenerate: bool,
+) -> None:
+    """
+    Generate candidate pictures for the chosen shots and save a contact sheet.
+
+    Raises:
+        ValidationError: if the shot selection is invalid.
+        ConfigurationError: if the image provider is not configured.
+        ImageGenerationError: if the service fails (pictures made so far stay saved).
+    """
+    shot_ids = parse_shot_selection(selection, [item["shot_id"] for item in items])
+
+    provider = create_image_provider()
+    provider.initialize()
+
+    aspect = (settings.video_width, settings.video_height)
+    manifest_name = make_filename(name, suffix="_keyframes", extension=".json")
+
+    if regenerate:
+        logger.info("--regen-keyframes given: making the chosen pictures again.")
+
+    manifest = load_manifest(
+        writer.path(manifest_name),
+        name,
+        provider.provider_name,
+        provider.model_name,
+        settings.image_steps,
+        f"{aspect[0]}:{aspect[1]}",
+    )
+
+    logger.info(
+        "Keyframes: shots %s, up to %d candidates each (%s, %s, %d steps).",
+        ", ".join(str(item) for item in shot_ids),
+        settings.image_candidates,
+        provider.provider_name,
+        provider.model_name,
+        settings.image_steps,
+    )
+
+    def save_manifest(current: dict) -> None:
+        writer.save(manifest_name, json.dumps(current, indent=2, ensure_ascii=False))
+
+    generator = KeyframeGenerator(
+        provider, writer, settings.image_steps, aspect, settings.image_crop_bias
+    )
+
+    try:
+        generator.generate(
+            name,
+            items,
+            shot_ids,
+            settings.image_candidates,
+            manifest,
+            regenerate=regenerate,
+            on_progress=save_manifest,
+        )
+    finally:
+        if manifest["shots"]:
+            save_manifest(manifest)
+
+    print("\n" + format_keyframe_report(manifest, shot_ids))
+
+    sheet_path = generator.make_contact_sheet(name, manifest, shot_ids)
+
+    logger.info("📄 Keyframe list saved to:")
+    logger.info(writer.path(manifest_name))
+
+    if sheet_path:
+        logger.info("🖼️ Contact sheet (all candidates on one picture):")
+        logger.info(sheet_path)
 
 
 def main():
@@ -525,8 +632,11 @@ def main():
 
             entries = run_shot_design(name, plan, bible, writer, args.redesign)
 
-            if args.image_prompts:
-                run_image_prompts(name, bible, entries, writer)
+            if args.image_prompts or args.keyframes:
+                items = run_image_prompts(name, bible, entries, writer, show=args.image_prompts)
+
+                if args.keyframes:
+                    run_keyframes(name, items, writer, args.keyframes, args.regen_keyframes)
 
     except YouTubeAIStudioError as exc:
         logger.error("%s", exc)

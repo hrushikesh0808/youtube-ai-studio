@@ -125,6 +125,29 @@ class Settings:
 
         # Image prompts (FLUX reads only the first part of a long prompt)
         self.image_prompt_max_chars: int = _get_int("IMAGE_PROMPT_MAX_CHARS", 900)
+
+        # Image generation
+        self.image_provider: str = os.getenv("IMAGE_PROVIDER", "cloudflare").strip().lower()
+        self.image_steps: int = _get_int("IMAGE_STEPS", 4)
+        self.image_candidates: int = _get_int("IMAGE_CANDIDATES", 2)
+
+        # Video shape (pictures are cropped to this aspect ratio)
+        self.video_width: int = _get_int("VIDEO_WIDTH", 1920)
+        self.video_height: int = _get_int("VIDEO_HEIGHT", 1080)
+
+        # Where the 16:9 crop sits on a taller picture: 0 = top, 0.5 = centre, 1 = bottom
+        crop_bias = _get_optional_float("IMAGE_CROP_BIAS")
+        self.image_crop_bias: float = 0.5 if crop_bias is None else crop_bias
+
+        # Cloudflare Workers AI (the account ID and token come only from .env)
+        self.cloudflare_account_id: str = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        self.cloudflare_api_token: str = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+        self.cloudflare_image_model: str = os.getenv(
+            "CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell"
+        ).strip()
+        self.cloudflare_api_base: str = os.getenv(
+            "CLOUDFLARE_API_BASE", "https://api.cloudflare.com/client/v4"
+        ).strip()
         
         # Debug
         self.debug: bool = (
