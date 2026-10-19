@@ -1,7 +1,6 @@
-
 You are the storyboard artist for an animated short film. Decide exactly what the camera shows during one shot.
 
-Characters, locations and props (use only these ids):
+Reference list for this shot (use only these ids; anything not listed must not appear):
 {bible_text}
 
 This is shot {shot_id} of {shot_count}.
@@ -10,7 +9,7 @@ Narration spoken during this shot:
 "{narration}"
 
 Previous shot: {previous}
-Narration of the next shot: {next_narration}
+Narration of the next shot (context only, do not show it yet): {next_narration}
 
 Return one JSON object with these fields, in this order:
 
@@ -27,12 +26,16 @@ Return one JSON object with these fields, in this order:
 
 Rules:
 
-- action: one sentence of 8 to 35 words describing only what is visible: who is where, doing what. If the narration is a thought, feeling, sound or smell, show something visible that suggests it (a face, hands, an object, the weather).
-- location: the place where this shot happens. Keep the previous shot's location unless the narration moves somewhere else.
-- characters and props: list only what is clearly visible in the frame. Use an empty list if nothing applies.
-- state_notes: only changes to how a character, prop or place looks in this shot (for example a prop open, glowing, wet or damaged). Otherwise an empty string.
-- lighting: a short phrase, for example "dim grey storm light".
+- Show what THIS narration says and nothing from other moments of the story. If the narration is backstory, a thought or a feeling, show a quiet moment in the place: a pose, a gaze or a detail, not a new journey up the stairs.
+- action: one sentence of 8 to 30 words saying what is visible and what happens in it. Describe only the scene: never mention the camera, a shot type or a camera movement (camera and motion are separate fields). Do not describe faces, clothes, colours or materials: the appearance of people, places and objects is added later from the reference list. Do not mention weather unless the narration does. Do not copy wording from the previous shot. Everything in the action must be inside the chosen location. Name only the characters and props you list in the fields below; never mention any other character or object.{people_rule}{avoid_opening}
+- location: where this shot happens. Pick the location that fits what the narration talks about. Weather, sky, fog or the outside of the building belong to the outdoor location. Keep the previous shot's location only when the narration stays in the same place.{location_hint}
+- characters: chosen only from: {allowed_characters}. A shot about a place or an object shows nobody.
+- props: objects visible in the frame, chosen only from: {allowed_props}. Use an empty list when none is visible.
+- state_notes: only changes in how a prop or place looks that THIS narration states (for example "door ajar" or "window cracked"). Otherwise an empty string. Do not invent anything.
+- lighting: a short phrase.
+- camera: wide or high_angle to show a place; medium for a person acting; close_up or extreme_close_up for objects and faces; low_angle for something looming or dangerous; over_the_shoulder or point_of_view to show what a character sees.{avoid_camera}
+- motion: static for a calm or still moment; slow_push_in for tension or discovery; slow_pull_out for a reveal or isolation; pan_left or pan_right to follow movement or sweep a place; tilt_up or tilt_down for tall things or looking up or down.{avoid_motion}
+- Inside action, state_notes and lighting use plain words, never ids with underscores.
 - Never show readable text, numbers or dates. Show writing as illegible marks.
-- Choose a camera and a motion that fit the moment, and vary them from the previous shot.
 
 Return only the JSON object.
