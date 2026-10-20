@@ -127,3 +127,18 @@ def validate_configuration() -> None:
         raise ConfigurationError(
             "IMAGE_CROP_BIAS must be between 0 and 1 (0 = top, 1 = bottom)."
         )
+
+    if not 256 <= settings.image_width <= 1920 or not 256 <= settings.image_height <= 1920:
+        raise ConfigurationError(
+            "IMAGE_WIDTH and IMAGE_HEIGHT must be between 256 and 1920."
+        )
+
+    if not settings.reference_dir:
+        raise ConfigurationError(
+            "REFERENCE_DIR must not be empty."
+        )
+
+    if not settings.scene_style:
+        raise ConfigurationError(
+            "SCENE_STYLE must not be empty."
+        )

@@ -30,6 +30,12 @@ Usage:
         shots: a list such as 1,2,8, a range such as 1-3, or all. Needs the
         Cloudflare settings in .env. Pictures already made are kept; add
         --regen-keyframes to make them again.
+
+    python main.py --story output/my_story.txt --use-saved-bible --places all
+        Generate candidate pictures of the places (no people) so you can approve one
+        per place. Copy the approved picture to REFERENCE_DIR/places/<place id>.png.
+        With a FLUX.2 model, --keyframes uses the approved pictures in REFERENCE_DIR
+        (characters/<id>/front.png ..., places/<id>.png) as reference pictures.
 """
 
 import argparse
@@ -42,6 +48,7 @@ from core.constants.constants import PROJECT_NAME
 from core.constants.constants import PROJECT_VERSION
 from core.config.validator import validate_configuration
 from core.exceptions.exceptions import ProviderError
+from core.exceptions.exceptions import ConfigurationError
 from core.exceptions.exceptions import ValidationError
 from core.exceptions.exceptions import YouTubeAIStudioError
 from core.utils.file_utils import make_filename
@@ -50,6 +57,14 @@ from core.utils.image_prompt import build_all_prompts
 from core.utils.image_prompt import format_prompt_report
 from core.utils.image_prompt import prompts_document
 from core.utils.keyframes import format_keyframe_report
+from core.utils.reference_prompt import build_place_prompt
+from core.utils.reference_prompt import build_reference_prompt
+from core.utils.reference_prompt import format_reference_report
+from core.utils.reference_prompt import reference_labels
+from core.utils.references import find_picture
+from core.utils.references import prepare_reference
+from core.utils.references import reference_key
+from core.utils.references import select_references
 from core.utils.keyframes import load_manifest
 from core.utils.keyframes import parse_shot_selection
 from core.utils.shot_design import format_design_table
@@ -66,10 +81,12 @@ from core.utils.text_metrics import estimate_narration_seconds
 from core.workflow.approval_gate import ApprovalGate
 
 from services.image.image_factory import create_image_provider
+from services.image.image_factory import image_uses_references
 from services.llm.ollama_provider import OllamaProvider
 from services.output.file_writer import FileWriter
 
 from agents.keyframe_generator import KeyframeGenerator
+from agents.place_generator import PlaceGenerator
 from agents.shot_designer import ShotDesigner
 from agents.story_bible_generator import StoryBibleGenerator
 from agents.story_generator import StoryGenerator
@@ -115,6 +132,11 @@ def parse_args() -> argparse.Namespace:
         "--regen-keyframes",
         action="store_true",
         help="Make the chosen keyframes again even if pictures already exist.",
+    )
+    parser.add_argument(
+        "--places",
+        metavar="PLACES",
+        help="Generate candidate pictures of these places (ids from the bible, comma separated, or all).",
     )
     return parser.parse_args()
 
@@ -513,12 +535,179 @@ def run_image_prompts(
     return items
 
 
+def run_reference_prompts(
+    name: str,
+    bible: dict,
+    entries: list[dict],
+    writer: FileWriter,
+    show: bool = True,
+) -> list[dict]:
+    """
+    Build the prompt and choose the reference pictures of every shot, save the prompts and return them.
+
+    Missing reference pictures are listed for each shot (and in the report), not raised
+    here: only generating pictures needs them.
+
+    Raises:
+        ValidationError: if a shot refers to something missing from the bible,
+            or a prompt is too long.
+        ConfigurationError: if a reference picture cannot be read.
+    """
+    root = Path(settings.reference_dir)
+    items = []
+    too_long = []
+
+    for entry in entries:
+        design = entry["design"]
+        references, missing = select_references(bible, design, root)
+        built = build_reference_prompt(bible, design, references, settings.scene_style)
+
+        if not built["fits"]:
+            too_long.append(f"shot {entry['shot_id']} ({built['length']} characters)")
+
+        prepared = [] if missing else [prepare_reference(item["path"]) for item in references]
+
+        items.append(
+            {
+                "shot_id": entry["shot_id"],
+                "duration_seconds": entry["duration_seconds"],
+                "location": design["location"],
+                "characters": list(design.get("characters") or []),
+                "props": list(design.get("props") or []),
+                "camera": design["camera"],
+                "motion": design["motion"],
+                "refs": reference_labels(references),
+                "missing": missing,
+                "references": prepared,
+                "reference_key": reference_key(prepared),
+                **built,
+            }
+        )
+
+    if too_long:
+        raise ValidationError(
+            "These prompts are longer than the service allows: " + ", ".join(too_long) + "."
+        )
+
+    document = {
+        "source": name,
+        "shot_count": len(items),
+        "prompts": [{key: value for key, value in item.items() if key != "references"} for item in items],
+    }
+    path = writer.save(
+        make_filename(name, suffix="_scene_prompts", extension=".json"),
+        json.dumps(document, indent=2, ensure_ascii=False),
+    )
+
+    if show:
+        print("\n" + format_reference_report(items))
+
+    logger.info("📄 Scene prompts (with reference pictures) saved to:")
+    logger.info(path)
+
+    return items
+
+
+def run_places(
+    name: str,
+    bible: dict,
+    writer: FileWriter,
+    selection: str,
+    regenerate: bool,
+) -> None:
+    """
+    Generate candidate pictures of places and save a contact sheet.
+
+    An already approved place picture is sent along as a style reference, so new
+    places get the same painting style, colours and weather.
+
+    Raises:
+        ValidationError: if a place id is not in the story bible.
+        ConfigurationError: if the image model cannot take reference pictures.
+        ImageGenerationError: if the service fails (pictures made so far stay saved).
+    """
+    if not image_uses_references():
+        raise ConfigurationError(
+            "Place pictures need a model that takes reference pictures: "
+            "set CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-2-klein-4b in .env."
+        )
+
+    locations = bible.get("locations", [])
+    ids = [item["id"] for item in locations]
+
+    if selection.strip().lower() == "all":
+        chosen = ids
+    else:
+        chosen = [part.strip() for part in selection.split(",") if part.strip()]
+        unknown = [item for item in chosen if item not in ids]
+
+        if not chosen or unknown:
+            raise ValidationError(
+                f"Unknown place(s): {', '.join(unknown) or '(none given)'}. "
+                f"The story bible has: {', '.join(ids)}."
+            )
+
+    provider = create_image_provider()
+    provider.initialize()
+
+    root = Path(settings.reference_dir)
+    jobs = []
+
+    for location_id in chosen:
+        location = next(item for item in locations if item["id"] == location_id)
+        style_picture = None
+
+        for other_id in ids:
+            if other_id != location_id:
+                style_picture = find_picture(root / "places", other_id)
+
+                if style_picture is not None:
+                    break
+
+        jobs.append(
+            {
+                "location_id": location_id,
+                "prompt": build_place_prompt(location, settings.scene_style, style_picture is not None),
+                "references": [prepare_reference(style_picture)] if style_picture else [],
+            }
+        )
+
+    logger.info(
+        "Places: %s, up to %d candidates each (%s, %dx%d).",
+        ", ".join(chosen),
+        settings.image_candidates,
+        provider.model_name,
+        settings.image_width,
+        settings.image_height,
+    )
+
+    generator = PlaceGenerator(provider, writer, (settings.image_width, settings.image_height))
+    paths = generator.generate(name, jobs, settings.image_candidates, regenerate)
+
+    print("\n" + "=" * 78)
+
+    for location_id, files in paths.items():
+        for number, file_path in enumerate(files, start=1):
+            print(f"{location_id:<22} candidate {number}  {file_path}")
+
+    print("=" * 78)
+
+    sheet_path = generator.make_contact_sheet(name, paths)
+
+    if sheet_path:
+        logger.info("🖼️ Contact sheet (all place candidates on one picture):")
+        logger.info(sheet_path)
+
+    logger.info("Copy the picture you approve for each place to: %s", root / "places" / "<place id>.png")
+
+
 def run_keyframes(
     name: str,
     items: list[dict],
     writer: FileWriter,
     selection: str,
     regenerate: bool,
+    reference_mode: bool = False,
 ) -> None:
     """
     Generate candidate pictures for the chosen shots and save a contact sheet.
@@ -529,6 +718,17 @@ def run_keyframes(
         ImageGenerationError: if the service fails (pictures made so far stay saved).
     """
     shot_ids = parse_shot_selection(selection, [item["shot_id"] for item in items])
+
+    if reference_mode:
+        problems = sorted({path for item in items if item["shot_id"] in shot_ids for path in item["missing"]})
+
+        if problems:
+            raise ConfigurationError(
+                "These reference pictures are missing, add them first:\n  " + "\n  ".join(problems)
+            )
+
+        # Pictures made with reference pictures get their own files, so the earlier ones stay untouched.
+        name = f"{name}_ref"
 
     provider = create_image_provider()
     provider.initialize()
@@ -561,7 +761,12 @@ def run_keyframes(
         writer.save(manifest_name, json.dumps(current, indent=2, ensure_ascii=False))
 
     generator = KeyframeGenerator(
-        provider, writer, settings.image_steps, aspect, settings.image_crop_bias
+        provider,
+        writer,
+        settings.image_steps,
+        aspect,
+        settings.image_crop_bias,
+        size=(settings.image_width, settings.image_height) if reference_mode else None,
     )
 
     try:
@@ -632,11 +837,19 @@ def main():
 
             entries = run_shot_design(name, plan, bible, writer, args.redesign)
 
+            if args.places:
+                run_places(name, bible, writer, args.places, args.regen_keyframes)
+
             if args.image_prompts or args.keyframes:
-                items = run_image_prompts(name, bible, entries, writer, show=args.image_prompts)
+                reference_mode = image_uses_references()
+
+                if reference_mode:
+                    items = run_reference_prompts(name, bible, entries, writer, show=args.image_prompts)
+                else:
+                    items = run_image_prompts(name, bible, entries, writer, show=args.image_prompts)
 
                 if args.keyframes:
-                    run_keyframes(name, items, writer, args.keyframes, args.regen_keyframes)
+                    run_keyframes(name, items, writer, args.keyframes, args.regen_keyframes, reference_mode)
 
     except YouTubeAIStudioError as exc:
         logger.error("%s", exc)

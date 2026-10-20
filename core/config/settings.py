@@ -139,11 +139,23 @@ class Settings:
         crop_bias = _get_optional_float("IMAGE_CROP_BIAS")
         self.image_crop_bias: float = 0.5 if crop_bias is None else crop_bias
 
+        # Pictures made with reference pictures (the service allows 256 to 1920 pixels per side)
+        self.image_width: int = _get_int("IMAGE_WIDTH", 1344)
+        self.image_height: int = _get_int("IMAGE_HEIGHT", 768)
+
+        # Where the approved reference pictures are kept (characters and places)
+        self.reference_dir: str = os.getenv("REFERENCE_DIR", "output/references").strip()
+        self.scene_style: str = os.getenv(
+            "SCENE_STYLE",
+            "Vivid colourful anime film illustration, painterly, clean smooth lines, sharp clean detail, "
+            "no grain, rich saturated colours",
+        ).strip()
+
         # Cloudflare Workers AI (the account ID and token come only from .env)
         self.cloudflare_account_id: str = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
         self.cloudflare_api_token: str = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
         self.cloudflare_image_model: str = os.getenv(
-            "CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell"
+            "CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-4b"
         ).strip()
         self.cloudflare_api_base: str = os.getenv(
             "CLOUDFLARE_API_BASE", "https://api.cloudflare.com/client/v4"

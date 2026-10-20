@@ -27,3 +27,8 @@ def create_image_provider() -> BaseProvider:
         f"IMAGE_PROVIDER '{settings.image_provider}' is not supported. "
         f"Supported: {', '.join(SUPPORTED_PROVIDERS)}."
     )
+
+
+def image_uses_references() -> bool:
+    """True when the configured image model takes reference pictures (FLUX.2 on Cloudflare)."""
+    return settings.image_provider == "cloudflare" and "flux-2" in settings.cloudflare_image_model

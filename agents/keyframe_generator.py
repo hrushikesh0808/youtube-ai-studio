@@ -37,12 +37,14 @@ class KeyframeGenerator:
         steps: int,
         aspect: tuple[int, int],
         crop_bias: float = 0.5,
+        size: tuple[int, int] | None = None,
     ):
         self.provider = provider
         self.writer = writer
         self.steps = steps
         self.aspect = aspect
         self.crop_bias = crop_bias
+        self.size = size
 
     def generate(
         self,
@@ -68,7 +70,8 @@ class KeyframeGenerator:
 
         for shot_id in shot_ids:
             prompt = by_id[shot_id]["prompt"]
-            fingerprint = prompt_hash(prompt)
+            references = by_id[shot_id].get("references") or []
+            fingerprint = prompt_hash(prompt + by_id[shot_id].get("reference_key", ""))
             entry = manifest["shots"].get(str(shot_id))
 
             if regenerate or entry is None or entry["prompt_hash"] != fingerprint:
@@ -88,7 +91,7 @@ class KeyframeGenerator:
                     continue
 
                 logger.info("Shot %d candidate %d/%d ...", shot_id, number, candidates)
-                entry["candidates"].append(self._make_candidate(name, shot_id, number, prompt))
+                entry["candidates"].append(self._make_candidate(name, shot_id, number, prompt, references))
                 entry["candidates"].sort(key=lambda item: item["number"])
 
                 if on_progress:
@@ -146,11 +149,21 @@ class KeyframeGenerator:
     def _files_exist(self, item: dict) -> bool:
         return self.writer.path(item["full"]).is_file() and self.writer.path(item["crop"]).is_file()
 
-    def _make_candidate(self, name: str, shot_id: int, number: int, prompt: str) -> dict:
+    def _make_candidate(self, name: str, shot_id: int, number: int, prompt: str, references=None) -> dict:
         """Generate one picture (asking again if it is blank), save it and describe it."""
         for attempt in range(1, MAX_BLANK_TRIES + 1):
             begin = time.monotonic()
-            data = self.provider.generate(prompt, self.steps)
+            if references:
+                data = self.provider.generate(
+                    prompt,
+                    None,
+                    references=references,
+                    width=self.size[0],
+                    height=self.size[1],
+                    seed=shot_id * 100 + number + attempt - 1,
+                )
+            else:
+                data = self.provider.generate(prompt, self.steps)
             seconds = time.monotonic() - begin
 
             image = open_image(data)
