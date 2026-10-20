@@ -19,6 +19,13 @@ COLOUR_NOTE = "Keep the colours rich and saturated, with warm glowing lights aga
 
 CLOSING = "Each person has exactly two arms and two hands. No text, no letters, no watermark, no signature."
 
+GLOW_WORDS = ("glow", "green", "eerie", "pulse", "flicker", "light up", "illuminat")
+
+GLOW_NOTE = (
+    "Magic or coloured light glows only on the objects; the person's skin, hair and clothes keep their normal "
+    "natural colours, and his hand touches the object directly."
+)
+
 PLACE_CLOSING = "No text, no letters, no watermark, no signature."
 
 MAX_PROMPT_CHARS = 2048
@@ -47,7 +54,8 @@ def reference_note(index: int, reference: dict) -> str:
         view = reference["view"].replace("_", " ")
         return (
             f"Image {index} shows the character {name} ({view} view): keep exactly this character's face, hair, "
-            "body, clothes and colours. Do not copy its plain background."
+            "body, clothes and colours. Same clothes only: no hood, no hat, no coat or jacket added. "
+            "Do not copy its plain background."
         )
 
     if kind == "face":
@@ -109,6 +117,9 @@ def build_reference_prompt(bible: dict, design: dict, references: list[dict], sc
 
         if lighting and level < 2:
             parts.append(sentence(f"Lighting: {lighting}"))
+
+        if any(word in f"{action} {lighting} {state_notes}".lower() for word in GLOW_WORDS):
+            parts.append(GLOW_NOTE)
 
         parts.append(COLOUR_NOTE)
         parts.append(CLOSING)

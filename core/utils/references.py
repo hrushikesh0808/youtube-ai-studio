@@ -30,7 +30,7 @@ MAX_REFERENCE_SIDE = 448
 VIEWS = ("front", "three_quarter", "side", "back", "happy", "thinking")
 
 # Cameras close enough that the face must be kept exactly (the face close-up is added).
-FACE_CAMERAS = ("close_up", "extreme_close_up", "medium", "over_the_shoulder", "low_angle", "point_of_view")
+FACE_CAMERAS = ("close_up", "extreme_close_up", "medium", "wide", "over_the_shoulder", "low_angle", "point_of_view")
 
 # Cameras that look at the character from the front.
 FRONT_CAMERAS = ("close_up", "extreme_close_up", "point_of_view", "over_the_shoulder")
